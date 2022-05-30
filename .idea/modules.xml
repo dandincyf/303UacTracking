@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/KCFTest.iml" filepath="$PROJECT_DIR$/.idea/KCFTest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../UAV_track_/.idea/UAV_track.iml" filepath="$PROJECT_DIR$/../UAV_track_/.idea/UAV_track.iml" />
+      <module fileurl="file://$USER_HOME$/PycharmProjects/adaptiveKCF/.idea/adaptiveKCF.iml" filepath="$USER_HOME$/PycharmProjects/adaptiveKCF/.idea/adaptiveKCF.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../pysot-master/.idea/pysot-master.iml" filepath="$PROJECT_DIR$/../pysot-master/.idea/pysot-master.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../../yolov5-master/.idea/yolov5-master.iml" filepath="$PROJECT_DIR$/../../yolov5-master/.idea/yolov5-master.iml" />
+    </modules>
+  </component>
+</project>
