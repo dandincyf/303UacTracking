@@ -387,7 +387,6 @@ def ExeTracking():
                     cv2.imwrite("get_the_first_frame.jpg", frameEach)
                     pathIn = './get_the_first_frame.jpg'
                     pathOut = './yoloframebox/frame_000001.jpg'
-                    # test = code.yolo_detect(pathIn, pathOut)
                     im, result = det.detect(frameEach)
                     if len(result) > 0:
                         w = result[0][2] - result[0][0]
@@ -399,10 +398,23 @@ def ExeTracking():
                         boundingbox = list(map(int, boundingbox))
                         dx = boundingbox[0] - test[2]
                         dy = boundingbox[1] - test[3]
-                        dw = boundingbox[2] - test[4]
-                        dh = boundingbox[3] - test[5]
-                        print("boundingbox-yolo:", [dx, dy, dw, dh])
-                        if (dx * dx + dy * dy) > 200:
+
+                        print("boundingbox-yolo:", [dx, dy])
+                        distance = dx * dx + dy * dy
+
+                        #   选中距离kcf框最近的YOLO框
+                        for i in range(1, len(result)):
+                            dx_temp = boundingbox[0] - result[i][2]
+                            dy_temp = boundingbox[1] - result[i][3]
+                            distance_temp = dx_temp*dx_temp + dy_temp*dy_temp
+                            if distance > distance_temp:
+                                distance = distance_temp
+                                w = result[i][2] - result[i][0]
+                                h = result[i][3] - result[i][1]
+                                test = [0, 1, result[i][0], result[i][1], w, h]
+
+
+                        if distance > 200:
                             # frameEach = im
                             tracker.init([test[2], test[3], test[4], test[5]], im)
                 boundingbox = tracker.update(frameEach)
