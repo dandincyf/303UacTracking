@@ -4,12 +4,12 @@ import time
 from sourcece.KCF import KCFTracker
 import numpy as np
 
-last_measurement = current_measurement = np.array((2, 1), np.float32)
-last_prediction = current_prediction = np.zeros((2, 1), np.float32)
+last_measurement = current_measurement = np.zeros((2, 1), np.float32)
+last_prediction = current_prediction = np.zeros((4, 1), np.float32)
 kalman = cv2.KalmanFilter(4, 2) # 4：状态数，包括（x，y，dx，dy）坐标及速度（每次移动的距离）；2：观测量，能看到的是坐标值
 kalman.measurementMatrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], np.float32) # 系统测量矩阵
 kalman.transitionMatrix = np.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32) # 状态转移矩阵
-kalman.processNoiseCov = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)*0.03 # 系统过程噪声协方差
+kalman.processNoiseCov = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)*0.0001 # 系统过程噪声协方差
 fpslist=[]
 def move(frame,x, y):
     global  current_measurement, measurements, last_measurement, current_prediction, last_prediction

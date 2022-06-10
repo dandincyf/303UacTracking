@@ -14,11 +14,17 @@ import os
 import shutil
 import tkinter.filedialog
 from AIDetector_pytorch import Detector
+from sourcece.kalman_yolobox import KalmanYolo
+import numpy as np
+import math
 
 det = Detector()
 test = []
 TrackingBoundingBoxPath = ""
 fps = 20
+
+yolodetect_list = [] #装yolo检测值
+yolopredic_list = [[0,0,0,0]] #装yolo的卡尔曼最佳估计值,初始化
 
 Windows = tkinter.Tk()
 
@@ -297,15 +303,18 @@ def ExeTracking():
                 Begin_train_flag = False
                 onTracking = True
             elif (onTracking):
-                print(yolocount)
+
                 yolocount = yolocount + 1
                 t0 = time.time()
+
                 if (yolocount % 10 == 0):
                     cv2.imwrite("get_the_first_frame.jpg", frameEach)
                     pathIn = './get_the_first_frame.jpg'
                     pathOut = './yoloframebox/frame_000001.jpg'
                     im, result = det.detect(frameEach)
+
                     if len(result) > 0:
+                        yolodetect_list.append([result[0][0], result[0][1]])  # 存放yolo每次检测的（x,y）值
                         w = result[0][2] - result[0][0]
                         h = result[0][3] - result[0][1]
                         test = [0, 1, result[0][0], result[0][1], w, h]
@@ -316,7 +325,7 @@ def ExeTracking():
                         dx = boundingbox[0] - test[2]
                         dy = boundingbox[1] - test[3]
 
-                        print("boundingbox-yolo:", [dx, dy])
+                        # print("boundingbox-yolo:", [dx, dy])
                         distance = dx * dx + dy * dy
 
                         #   选中距离kcf框最近的YOLO框
@@ -329,14 +338,25 @@ def ExeTracking():
                                 w = result[i][2] - result[i][0]
                                 h = result[i][3] - result[i][1]
                                 test = [0, 1, result[i][0], result[i][1], w, h]
+                                yolodetect_list[-1] = [result[i][0],result[i][1]]  # 更新yolo检测的当前（x,y）值
 
+                        # 用卡尔曼进行滤波，得到位置的先验估计值，和当前测量值比较，若当前测量值与...
+                        # 先验估计值差别较大，则认为YOLO错误
+                        cp_pre, current_prediction = KalmanYolo(yolodetect_list[-1], yolopredic_list[-1])
+                        yolopredic_list.append(current_prediction)
 
-                        if distance > 200:
+                        current_prediction = np.array(current_prediction).reshape(-1)
+                        if (math.fabs(cp_pre[0]-yolodetect_list[-1][0]) < 200) & \
+                                (math.fabs(cp_pre[1]-yolodetect_list[-1][1]) < 200) & (distance > 200):
+                            # 满足条件1的情况下，如果kcf框距离yolo框过远，就认为kcf跟丢目标，重新用yolo初始化
                             tracker.init([test[2], test[3], test[4], test[5]], im)
+
+
+
                 boundingbox = tracker.update(frameEach)
                 t1 = time.time()
                 boundingbox = list(map(int, boundingbox))
-                print("boundingbox_2:", boundingbox)
+                # print("boundingbox_2:", boundingbox)
                 if boundingbox[2] != 0 and boundingbox[3] != 0:
                     sub_frame = frameEach[boundingbox[1]: boundingbox[1] + boundingbox[3],
                                 boundingbox[0]: boundingbox[0] + boundingbox[2]]
@@ -933,7 +953,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\3.avi"
+            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\5555.mp4"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')

@@ -23,8 +23,8 @@ def mousemove(event, x, y, s, p):
     cpx, cpy = current_prediction[0], current_prediction[1] # 当前预测坐标
 
     # 绘制从上一次测量到当前测量以及从上一次预测到当前预测的两条线
-    cv2.line(frame, (lmx, lmy), (cmx, cmy), (255, 0, 0)) # 蓝色线为测量值
-    cv2.line(frame, (lpx, lpy), (cpx, cpy), (255, 0, 255)) # 粉色线为预测值
+    cv2.line(frame, (int(lmx), int(lmy)), (int(cmx), int(cmy)), (255, 0, 0)) # 蓝色线为测量值
+    cv2.line(frame, (int(lpx), int(lpy)), (int(cpx), int(cpy)), (255, 0, 255)) # 粉色线为预测值
 
 # 窗口初始化
 cv2.namedWindow("kalman_tracker")
