@@ -17,7 +17,7 @@ from AIDetector_pytorch import Detector
 from sourcece.kalman_yolobox import KalmanYolo
 import numpy as np
 import math
-#增加一行代码，测试branch是否有用
+
 det = Detector()
 test = []
 TrackingBoundingBoxPath = ""
@@ -25,6 +25,9 @@ fps = 20
 
 yolodetect_list = [] #装yolo检测值
 yolopredic_list = [[0,0,0,0]] #装yolo的卡尔曼最佳估计值,初始化
+yolo_flag = False #判断当前跟踪器是否是完全基于yolo跟踪，True表示完全基于yolo跟踪
+miss_count = 0
+miss_flag = False
 
 Windows = tkinter.Tk()
 
@@ -88,6 +91,11 @@ def ExeTracking():
     print(Test_RecGroundTruth_Name)
     global TrackingBoundingBoxPath
     global test
+    global yolodetect_list
+    global yolopredic_list
+    global yolo_flag
+    global miss_count
+    global miss_flag
     if (Algorithm_name == "KCF with adaptive frames" and Test_RecGroundTruth_Name != ""):
         TrackingBoundingBoxPath = "./sourcece/KCF_withAdaptiveFrames.txt"
         selectingObject = False
@@ -306,68 +314,193 @@ def ExeTracking():
 
                 yolocount = yolocount + 1
                 t0 = time.time()
+                cv2.imwrite("get_the_first_frame.jpg", frameEach)
+                pathIn = './get_the_first_frame.jpg'
+                pathOut = './yoloframebox/frame_000001.jpg'
 
-                if (yolocount % 10 == 0):
-                    cv2.imwrite("get_the_first_frame.jpg", frameEach)
-                    pathIn = './get_the_first_frame.jpg'
-                    pathOut = './yoloframebox/frame_000001.jpg'
+                # kcf跟踪模式
+                if not yolo_flag:
+                    print('kcf track model')
+                    boundingbox = tracker.update(frameEach)
+                    boundingbox = list(map(int, boundingbox))
+                    w_kcf = boundingbox[2]
+                    h_kcf = boundingbox[3]
+
+                    # 小目标时（kcf检测框w<20），yolo跟踪模式激活，标志置1，本帧就开始执行yolo跟踪模式
+                    if w_kcf < 20:
+                        print('kcf track model--little object')
+                        yolo_flag = True
+                        im, result = det.detect(frameEach)
+                        if len(result) > 0:
+                            miss_count = 0
+                            miss_flag = False
+                            yolodetect_list.append([result[0][0], result[0][1]])
+                            distance_min = 0
+                            w = result[0][2] - result[0][0]
+                            h = result[0][3] - result[0][1]
+
+                            for i in range(len(result)):  # 选取离上一个yolo框最近的yolo框
+                                dx_temp = result[i][0] - yolodetect_list[-1][0]
+                                dy_temp = result[i][1] - yolodetect_list[i][1]
+                                distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
+                                if distance_temp < distance_min:
+                                    yolodetect_list[-1] = [result[i][0], result[i][1]]
+                                    w = result[i][2] - result[i][0]
+                                    h = result[i][3] - result[i][1]
+                                    test = [0, 1, result[i][0], result[i][1], w, h]
+                            # if w >= 20:  # 若宽度超过20，下帧开始进入kcf模式
+                            #     yolo_flag = False
+                            #     tracker.init([test[2], test[3], test[4], test[5]], im)
+                            t1 = time.time()
+                            if test[4] != 0 and test[5] != 0:
+                                sub_frame = frameEach[test[3]: test[3] + test[5],
+                                            test[2]: test[2] + test[4]]
+                            cv2.rectangle(frameEach, (test[2], test[3]),
+                                          (test[2] + test[4], test[3] + test[5]), (0, 0, 255), 2)
+                            duration = 0.99 * duration + 0.01 * (t1 - t0)
+                            KCFGroundList.append(test)
+                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.6,
+                                        (0, 0, 255), 2)
+                        else:
+                            miss_count += 1
+                            continue
+
+
+                    elif (w_kcf >= 20) and (yolocount % 10 == 0):
+                        print('kcf track model--large object & yolo')
+
+                        im, result = det.detect(frameEach)
+                        if len(result) > 0:
+                            miss_count = 0
+                            miss_flag = False
+                            yolodetect_list.append([result[0][0], result[0][1]])  # 存放yolo每次检测的（x,y）值
+                            w = result[0][2] - result[0][0]
+                            h = result[0][3] - result[0][1]
+                            test = [0, 1, result[0][0], result[0][1], w, h]
+                            dx = boundingbox[0] - test[2]
+                            dy = boundingbox[1] - test[3]
+
+                            distance = dx * dx + dy * dy
+
+                            #   选中距离kcf框最近的YOLO框
+                            for i in range(1, len(result)):
+                                dx_temp = boundingbox[0] - result[i][2]
+                                dy_temp = boundingbox[1] - result[i][3]
+                                distance_temp = dx_temp*dx_temp + dy_temp*dy_temp
+                                if distance > distance_temp:
+                                    distance = distance_temp
+                                    w = result[i][2] - result[i][0]
+                                    h = result[i][3] - result[i][1]
+                                    test = [0, 1, result[i][0], result[i][1], w, h]
+                                    yolodetect_list[-1] = [result[i][0],result[i][1]]  # 更新yolo检测的当前（x,y）值
+
+                            # cv2.rectangle(frameEach, (test[2], test[3]),
+                            #               (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 10)
+
+                            # 用卡尔曼进行滤波，得到位置的先验估计值，和当前测量值比较，若当前测量值与...
+                            # 先验估计值差别较大，则认为YOLO错误
+                            cp_pre, current_prediction = KalmanYolo(yolodetect_list[-1], yolopredic_list[-1])
+                            yolopredic_list.append(current_prediction)
+
+                            current_prediction = np.array(current_prediction).reshape(-1)
+                            if (math.fabs(cp_pre[0]-yolodetect_list[-1][0]) < 200) & \
+                                    (math.fabs(cp_pre[1]-yolodetect_list[-1][1]) < 200) & (distance > 200):
+                                # 满足条件1的情况下，如果kcf框距离yolo框过远，就认为kcf跟丢目标，重新用yolo初始化
+                                tracker.init([test[2], test[3], test[4], test[5]], im)
+
+                            t1 = time.time()
+                            if boundingbox[2] != 0 and boundingbox[3] != 0:
+                                sub_frame = frameEach[boundingbox[1]: boundingbox[1] + boundingbox[3],
+                                            boundingbox[0]: boundingbox[0] + boundingbox[2]]
+                            cv2.rectangle(frameEach, (boundingbox[0], boundingbox[1]),
+                                          (boundingbox[0] + boundingbox[2], boundingbox[1] + boundingbox[3]),
+                                          (0, 0, 255), 2)
+                            duration = 0.99 * duration + 0.01 * (t1 - t0)
+                            KCFGroundList.append(boundingbox)
+                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.6,
+                                        (0, 0, 255), 2)
+                        else:
+                            miss_count += 1
+                            t1 = time.time()
+                            if boundingbox[2] != 0 and boundingbox[3] != 0:
+                                sub_frame = frameEach[boundingbox[1]: boundingbox[1] + boundingbox[3],
+                                            boundingbox[0]: boundingbox[0] + boundingbox[2]]
+                            cv2.rectangle(frameEach, (boundingbox[0], boundingbox[1]),
+                                          (boundingbox[0] + boundingbox[2], boundingbox[1] + boundingbox[3]),
+                                          (0, 0, 255), 2)
+                            duration = 0.99 * duration + 0.01 * (t1 - t0)
+                            KCFGroundList.append(boundingbox)
+                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                        cv2.FONT_HERSHEY_SIMPLEX,
+                                        0.6,
+                                        (0, 0, 255), 2)
+
+                    else:
+                        print('kcf track model--large object only')
+                        if miss_count >= 3: #连续3次yolo没有检测出目标，就认为目标丢失，只要目标丢失，就进入yolo模式
+                            miss_flag = True
+                            yolo_flag = True
+                            continue
+                        t1 = time.time()
+                        if boundingbox[2] != 0 and boundingbox[3] != 0:
+                            sub_frame = frameEach[boundingbox[1]: boundingbox[1] + boundingbox[3],
+                                        boundingbox[0]: boundingbox[0] + boundingbox[2]]
+                        cv2.rectangle(frameEach, (boundingbox[0], boundingbox[1]),
+                                      (boundingbox[0] + boundingbox[2], boundingbox[1] + boundingbox[3]), (0, 0, 255), 2)
+                        duration = 0.99 * duration + 0.01 * (t1 - t0)
+                        KCFGroundList.append(boundingbox)
+                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20), cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.6,
+                                    (0, 0, 255), 2)
+
+                # yolo跟踪模式
+                else:
+                    print('yolo track model')
                     im, result = det.detect(frameEach)
 
                     if len(result) > 0:
-                        yolodetect_list.append([result[0][0], result[0][1]])  # 存放yolo每次检测的（x,y）值
+                        print('yolo track model--success')
+                        miss_flag = False
+                        yolodetect_list.append([result[0][0],result[0][1]])
+                        distance_min = 0
                         w = result[0][2] - result[0][0]
                         h = result[0][3] - result[0][1]
-                        test = [0, 1, result[0][0], result[0][1], w, h]
-                        cv2.rectangle(frameEach, (test[2], test[3]),
-                                      (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 10)
-                        boundingbox = tracker.update(frameEach)
-                        boundingbox = list(map(int, boundingbox))
-                        dx = boundingbox[0] - test[2]
-                        dy = boundingbox[1] - test[3]
 
-                        # print("boundingbox-yolo:", [dx, dy])
-                        distance = dx * dx + dy * dy
-
-                        #   选中距离kcf框最近的YOLO框
-                        for i in range(1, len(result)):
-                            dx_temp = boundingbox[0] - result[i][2]
-                            dy_temp = boundingbox[1] - result[i][3]
+                        for i in range(len(result)):    #选取离上一个yolo框最近的yolo框
+                            dx_temp = result[i][0] - yolodetect_list[-1][0]
+                            dy_temp = result[i][1] - yolodetect_list[i][1]
                             distance_temp = dx_temp*dx_temp + dy_temp*dy_temp
-                            if distance > distance_temp:
-                                distance = distance_temp
+                            if distance_temp < distance_min:
+                                yolodetect_list[-1] = [result[i][0],result[i][1]]
                                 w = result[i][2] - result[i][0]
                                 h = result[i][3] - result[i][1]
                                 test = [0, 1, result[i][0], result[i][1], w, h]
-                                yolodetect_list[-1] = [result[i][0],result[i][1]]  # 更新yolo检测的当前（x,y）值
-
-                        # 用卡尔曼进行滤波，得到位置的先验估计值，和当前测量值比较，若当前测量值与...
-                        # 先验估计值差别较大，则认为YOLO错误
-                        cp_pre, current_prediction = KalmanYolo(yolodetect_list[-1], yolopredic_list[-1])
-                        yolopredic_list.append(current_prediction)
-
-                        current_prediction = np.array(current_prediction).reshape(-1)
-                        if (math.fabs(cp_pre[0]-yolodetect_list[-1][0]) < 200) & \
-                                (math.fabs(cp_pre[1]-yolodetect_list[-1][1]) < 200) & (distance > 200):
-                            # 满足条件1的情况下，如果kcf框距离yolo框过远，就认为kcf跟丢目标，重新用yolo初始化
+                        if w >= 20: #若宽度超过20，下帧开始进入kcf模式
+                            yolo_flag = False
                             tracker.init([test[2], test[3], test[4], test[5]], im)
+                        t1 = time.time()
+                        if test[4] != 0 and test[5] != 0:
+                            sub_frame = frameEach[test[3]: test[3] + test[5],
+                                        test[2]: test[2] + test[4]]
+                        cv2.rectangle(frameEach, (test[2], test[3]),
+                                      (test[2] + test[4], test[3] + test[5]), (0, 0, 255), 2)
+                        duration = 0.99 * duration + 0.01 * (t1 - t0)
+                        KCFGroundList.append(test)
+                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.6,
+                                    (0, 0, 255), 2)
+                    else:
+                        print('yolo track model--fail')
+                        miss_count += 1
+                        if miss_count >= 3:
+                            miss_flag = True
+                        continue
 
-
-
-                boundingbox = tracker.update(frameEach)
-                t1 = time.time()
-                boundingbox = list(map(int, boundingbox))
-                # print("boundingbox_2:", boundingbox)
-                if boundingbox[2] != 0 and boundingbox[3] != 0:
-                    sub_frame = frameEach[boundingbox[1]: boundingbox[1] + boundingbox[3],
-                                boundingbox[0]: boundingbox[0] + boundingbox[2]]
-                cv2.rectangle(frameEach, (boundingbox[0], boundingbox[1]),
-                              (boundingbox[0] + boundingbox[2], boundingbox[1] + boundingbox[3]), (0, 0, 255), 2)
-                duration = 0.99 * duration + 0.01 * (t1 - t0)
-                # duration = t1 - t0
-                KCFGroundList.append(boundingbox)
-                cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.6,
-                            (0, 0, 255), 2)
             TrackingFrame_Pathout = ("./Outputframes/frame_00000" + str(framenum) + ".jpg")
             FirstFrame_Pathout = ("./Outputframes/sub_frame_00000" + str(framenum) + ".jpg")
 
@@ -953,7 +1086,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\5555.mp4"
+            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene7.mp4"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')
