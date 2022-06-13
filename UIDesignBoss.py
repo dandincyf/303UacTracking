@@ -57,8 +57,8 @@ def ExeDetection():
     x2=result[0][2]
     y2=result[0][3]
     cv2.rectangle(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    cv2.imwrite('./Outputframes/frame_000001.jpg', im)
-    pathOut = './Outputframes/frame_000001.jpg'
+    cv2.imwrite('C:/dataset/KCF_Test_results/Outputframes_temp/frame_000001.jpg', im)
+    pathOut = 'C:/dataset/KCF_Test_results/Outputframes_temp/frame_000001.jpg'
 
 
     w = result[0][2] - result[0][0]
@@ -368,8 +368,8 @@ def ExeTracking():
                 cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20), cv2.FONT_HERSHEY_SIMPLEX,
                             0.6,
                             (0, 0, 255), 2)
-            TrackingFrame_Pathout = ("./Outputframes/frame_00000" + str(framenum) + ".jpg")
-            FirstFrame_Pathout = ("./Outputframes/sub_frame_00000" + str(framenum) + ".jpg")
+            TrackingFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/frame_00000" + str(framenum) + ".jpg")
+            FirstFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/sub_frame_00000" + str(framenum) + ".jpg")
 
             framenum += 1
             cv2.imwrite(TrackingFrame_Pathout, frameEach)
@@ -953,7 +953,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\5555.mp4"
+            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene7.mp4"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')
