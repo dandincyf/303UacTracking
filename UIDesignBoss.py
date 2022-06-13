@@ -60,8 +60,8 @@ def ExeDetection():
     x2=result[0][2]
     y2=result[0][3]
     cv2.rectangle(im, (x1, y1), (x2, y2), (0, 255, 0), 2)
-    cv2.imwrite('./Outputframes/frame_000001.jpg', im)
-    pathOut = './Outputframes/frame_000001.jpg'
+    cv2.imwrite('C:/dataset/KCF_Test_results/Outputframes_temp/frame_000001.jpg', im)
+    pathOut = 'C:/dataset/KCF_Test_results/Outputframes_temp/frame_000001.jpg'
 
 
     w = result[0][2] - result[0][0]
@@ -339,24 +339,23 @@ def ExeTracking():
                             w = result[0][2] - result[0][0]
                             h = result[0][3] - result[0][1]
 
-                            for i in range(len(result)):  # 选取离上一个yolo框最近的yolo框
-                                dx_temp = result[i][0] - yolodetect_list[-1][0]
-                                dy_temp = result[i][1] - yolodetect_list[i][1]
-                                distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
-                                if distance_temp < distance_min:
-                                    yolodetect_list[-1] = [result[i][0], result[i][1]]
-                                    w = result[i][2] - result[i][0]
-                                    h = result[i][3] - result[i][1]
-                                    test = [0, 1, result[i][0], result[i][1], w, h]
-                            # if w >= 20:  # 若宽度超过20，下帧开始进入kcf模式
-                            #     yolo_flag = False
-                            #     tracker.init([test[2], test[3], test[4], test[5]], im)
+                            # for i in range(len(result)):  # 选取离上一个yolo框最近的yolo框
+                            #     dx_temp = result[i][0] - yolodetect_list[-1][0]
+                            #     dy_temp = result[i][1] - yolodetect_list[i][1]
+                            #     distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
+                            #     if distance_temp < distance_min:
+                            #         yolodetect_list[-1] = [result[i][0], result[i][1]]
+                            #         w = result[i][2] - result[i][0]
+                            #         h = result[i][3] - result[i][1]
+                            #         test = [0, 1, result[i][0], result[i][1], w, h]
+
+
                             t1 = time.time()
                             if test[4] != 0 and test[5] != 0:
                                 sub_frame = frameEach[test[3]: test[3] + test[5],
                                             test[2]: test[2] + test[4]]
                             cv2.rectangle(frameEach, (test[2], test[3]),
-                                          (test[2] + test[4], test[3] + test[5]), (0, 0, 255), 2)
+                                          (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 2)
                             duration = 0.99 * duration + 0.01 * (t1 - t0)
                             KCFGroundList.append(test)
                             cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
@@ -396,8 +395,8 @@ def ExeTracking():
                                     test = [0, 1, result[i][0], result[i][1], w, h]
                                     yolodetect_list[-1] = [result[i][0],result[i][1]]  # 更新yolo检测的当前（x,y）值
 
-                            # cv2.rectangle(frameEach, (test[2], test[3]),
-                            #               (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 10)
+                            cv2.rectangle(frameEach, (test[2], test[3]),
+                                          (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 10)
 
                             # 用卡尔曼进行滤波，得到位置的先验估计值，和当前测量值比较，若当前测量值与...
                             # 先验估计值差别较大，则认为YOLO错误
@@ -470,24 +469,27 @@ def ExeTracking():
                         w = result[0][2] - result[0][0]
                         h = result[0][3] - result[0][1]
 
-                        for i in range(len(result)):    #选取离上一个yolo框最近的yolo框
-                            dx_temp = result[i][0] - yolodetect_list[-1][0]
-                            dy_temp = result[i][1] - yolodetect_list[i][1]
-                            distance_temp = dx_temp*dx_temp + dy_temp*dy_temp
-                            if distance_temp < distance_min:
-                                yolodetect_list[-1] = [result[i][0],result[i][1]]
-                                w = result[i][2] - result[i][0]
-                                h = result[i][3] - result[i][1]
-                                test = [0, 1, result[i][0], result[i][1], w, h]
+                        # for i in range(len(result)):    #选取离上一个yolo框最近的yolo框
+                        #     dx_temp = result[i][0] - yolodetect_list[-1][0]
+                        #     dy_temp = result[i][1] - yolodetect_list[i][1]
+                        #     distance_temp = dx_temp*dx_temp + dy_temp*dy_temp
+                        #     if distance_temp < distance_min:
+                        #         yolodetect_list[-1] = [result[i][0],result[i][1]]
+                        #         w = result[i][2] - result[i][0]
+                        #         h = result[i][3] - result[i][1]
+                        #         test = [0, 1, result[i][0], result[i][1], w, h]
+
                         if w >= 20: #若宽度超过20，下帧开始进入kcf模式
                             yolo_flag = False
                             tracker.init([test[2], test[3], test[4], test[5]], im)
+
+
                         t1 = time.time()
                         if test[4] != 0 and test[5] != 0:
                             sub_frame = frameEach[test[3]: test[3] + test[5],
                                         test[2]: test[2] + test[4]]
                         cv2.rectangle(frameEach, (test[2], test[3]),
-                                      (test[2] + test[4], test[3] + test[5]), (0, 0, 255), 2)
+                                      (test[2] + test[4], test[3] + test[5]), (0, 255, 0), 2)
                         duration = 0.99 * duration + 0.01 * (t1 - t0)
                         KCFGroundList.append(test)
                         cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
@@ -501,8 +503,8 @@ def ExeTracking():
                             miss_flag = True
                         continue
 
-            TrackingFrame_Pathout = ("./Outputframes/frame_00000" + str(framenum) + ".jpg")
-            FirstFrame_Pathout = ("./Outputframes/sub_frame_00000" + str(framenum) + ".jpg")
+            TrackingFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/frame_00000" + str(framenum) + ".jpg")
+            FirstFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/sub_frame_00000" + str(framenum) + ".jpg")
 
             framenum += 1
             cv2.imwrite(TrackingFrame_Pathout, frameEach)
