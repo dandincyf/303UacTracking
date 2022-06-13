@@ -465,7 +465,7 @@ def ExeTracking():
                         print('yolo track model--success')
                         miss_flag = False
                         yolodetect_list.append([result[0][0],result[0][1]])
-                        distance_min = 0
+                        # distance_min = 0
                         w = result[0][2] - result[0][0]
                         h = result[0][3] - result[0][1]
 
