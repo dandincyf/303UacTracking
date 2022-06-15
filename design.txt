@@ -1,0 +1,5 @@
+dev2
+
+该版本不采用kalman滤波，仍旧保留yolo模式和kcf模式
+
+只有一个miss，只要miss置1后，yolo检测出结果，就忽略yolo跳变
