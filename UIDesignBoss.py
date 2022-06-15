@@ -331,7 +331,6 @@ def ExeTracking():
                         yolo_flag = True
                     if yolocount % 10 == 0:
                         im, result = det.detect(frameEach)
-                        result = list(map(int,result))
                         if(len(result)>0): #如果yolo能检测出东西
                             x_yolo = result[0][0]
                             y_yolo = result[0][1]
@@ -387,7 +386,6 @@ def ExeTracking():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                 else: # yolo跟踪模式
                     im, result = det.detect(frameEach)
-                    result = list(map(int, result))
                     if (len(result) > 0):  # 如果yolo能检测出东西
                         x = result[0][0]
                         y = result[0][1]
