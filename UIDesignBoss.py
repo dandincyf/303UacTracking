@@ -91,7 +91,12 @@ def ExeTracking():
     yolo_flag = False
     yololist = []
     misscount = 0
+    jumptimes = 0
+    jumplist = [] # 放jump时yolo结果
+    jump_delta = [] # 放jump时相邻帧yolo结果差值
+    jump_same_flag = False # jump时，yolo检测的是否是目标
     miss_flag = False
+    edgemiss_flag = False # 边缘miss，在满足miss_flag后，还需满足在边缘的条件
     if (Algorithm_name == "KCF with adaptive frames" and Test_RecGroundTruth_Name != ""):
         TrackingBoundingBoxPath = "./sourcece/KCF_withAdaptiveFrames.txt"
         selectingObject = False
@@ -273,7 +278,7 @@ def ExeTracking():
         duration = 0.01
         Performancelistx = []
         Performancelisty = []
-        KCFGroundList = []
+        KCFGroundList = [[0, 0, 0, 0]]
 
         cap = cv2.VideoCapture(Test_Video_Name)
         cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
@@ -287,8 +292,6 @@ def ExeTracking():
         Begin_train_flag = True
         framenum = 1
         Text_TrackingLog.insert(tkinter.END, '***********执行跟踪程序*************\n')
-        Missflag = False
-        count = 120
         yolocount = 0
         while (cap.isOpened()):
             Text_TrackingLog.config(state='normal')
@@ -307,12 +310,9 @@ def ExeTracking():
                 Begin_train_flag = False
                 onTracking = True
             elif (onTracking):
-                cv2.imwrite("get_the_first_frame.jpg", frameEach)
-                pathIn = './get_the_first_frame.jpg'
-                pathOut = './yoloframebox/frame_000001.jpg'
-
                 yolocount = yolocount + 1
                 t0 = time.time()
+                print(yolocount)
 
                 # 每隔100帧，清理一次列表，防止降低运行速度
                 if yolocount % 100 == 0:
@@ -327,137 +327,501 @@ def ExeTracking():
                     y_kcf = boundingbox[1]
                     w_kcf = boundingbox[2]
                     h_kcf = boundingbox[3]
-                    if w_kcf < 20:
+                    if w_kcf < 10:
                         yolo_flag = True
-                    if yolocount % 10 == 0:
+                    # 如果jumptimes > 0，每帧执行一次yolo
+                    if jumptimes > 0:
                         im, result = det.detect(frameEach)
-                        if(len(result)>0): #如果yolo能检测出东西
+                        # print('im.shape = ', im.shape[1], ' ', im.shape[0])
+                        if (len(result) > 0):  # 如果yolo能检测出东西
                             x_yolo = result[0][0]
                             y_yolo = result[0][1]
-                            w_yolo = result[0][2]
-                            h_yolo = result[0][3]
+                            w_yolo = result[0][2] - result[0][0]
+                            h_yolo = result[0][3] - result[0][1]
                             distance_yolo = 0
                             yololist.append([x_yolo, y_yolo, w_yolo, h_yolo])
-                            if len(yololist) > 1: #不是第一帧yolo
+                            if len(yololist) > 1:  # 不是第一帧yolo
                                 dx_yolo = x_yolo - yololist[-2][0]
                                 dy_yolo = y_yolo - yololist[-2][1]
                                 distance_yolo = dx_yolo * dx_yolo + dy_yolo * dy_yolo
                                 # 选出一个距离上帧yolo框最近的yolo框
-                                for i in range(1,len(result)):
-                                    x_temp = result[i][0]
-                                    y_temp = result[i][1]
-                                    distance_temp = x_temp*x_temp + y_temp*y_temp
+                                for i in range(1, len(result)):
+                                    dx_temp = result[i][0] - yololist[-2][0]
+                                    dy_temp = result[i][1] - yololist[-2][1]
+                                    distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
                                     if distance_temp < distance_yolo:
-                                        x_yolo = x_temp
-                                        y_yolo = y_temp
-                                        w_yolo = result[i][2]
-                                        h_yolo = result[i][3]
+                                        x_yolo = result[i][0]
+                                        y_yolo = result[i][1]
+                                        w_yolo = result[i][2] - result[i][0]
+                                        h_yolo = result[i][3] - result[i][1]
                                         distance_yolo = distance_temp
                                         yololist[-1] = [x_yolo, y_yolo, w_yolo, h_yolo]
-                            # 如果yolo跳变，认为yolo不可靠，和上帧yolo比较，不考虑miss，miss后只会激活yolo跟踪模式
-                            if (distance_yolo > 500):
+
+                            # 如果yolo跳变，认为yolo暂时不可靠，和上帧yolo比较，不考虑miss，miss后只会激活yolo跟踪模式
+                            # 通过jumptimes进一步判断yolo是否可靠
+                            if (math.fabs(x_yolo - x_kcf) > 200) or (math.fabs(y_yolo - y_kcf) > 200):
                                 del yololist[-1]
+                                # yolo不可靠也可以理解为yolo没有检测出目标，因此misscount+1
+                                misscount += 1
+                                if misscount >= 3:
+                                    miss_flag = True
+                                    yolo_flag = True
                                 # 更新KCFGroundList
                                 KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
-                            else: # yolo不跳变，可靠
-                                # 判断kcf是否偏离
-                                if (math.fabs(x_kcf - x_yolo) > 100) or (math.fabs(y_kcf - y_yolo)) or \
-                                    (float(w_kcf) / float(w_yolo) < 0.6) or (float(w_yolo) / float(w_kcf) < 0.6):
-                                    tracker.init(yololist[-1], frameEach)
+
+                                jumptimes += 1
+                                if jumptimes == 4:  # 看连续3帧是否接近，若接近，认为是目标
+                                    jump_same_flag = True
+                                    for i in jump_delta:
+                                        if math.fabs(i) > 50:
+                                            jump_same_flag = False
+                                    if jump_same_flag:  # yolo结果可靠
+                                        yololist.append([x_yolo, y_yolo, w_yolo, h_yolo])
+                                        misscount = 0
+                                        jump_same_flag = False
+                                        jumptimes = 0
+                                        jump_delta = []
+                                        jumplist = []
+                                        KCFGroundList.append(yololist[-1])
+                                        # yolo画框
+                                        cv2.rectangle(frameEach, (x_yolo, y_yolo), (x_yolo + w_yolo,
+                                                                                    y_yolo + h_yolo), (0, 255, 0), 2)
+                                        t1 = time.time()
+                                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                        sub_frame = frameEach[y_kcf: y_kcf + h_kcf, x_kcf: x_kcf + w_kcf]
+                                        cv2.rectangle(frameEach, (x_kcf, y_kcf), (x_kcf + w_kcf, y_kcf + h_kcf),
+                                                      (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'kcf model: yolo jump, success', (8, 50),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'edgemiss = ' +
+                                                    str(edgemiss_flag), (8, 80),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        continue  # 因为flag值改变，不执行后续语句
+                                    # 每隔3帧清空一次
+                                    jumptimes = 0
+                                    jump_delta = []
+                                    jumplist = []
+                                elif (jumptimes == 1):
+                                    jumplist.append(x_yolo)
+                                    jumplist.append(y_yolo)
+                                else:
+                                    jump_delta.append(jumplist[-2] - x_yolo)
+                                    jump_delta.append(jumplist[-1] - y_yolo)
+                                    jumplist.append(x_yolo)
+                                    jumplist.append(y_yolo)
+                                print('kcf model: yolo fail, jump')
+                                cv2.putText(frameEach, 'kcf model: yolo jump, fail', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            else:  # yolo不跳变，可靠
+                                jumptimes = 0
+                                jump_delta = []
+                                jumplist = []
+                                misscount = 0
+                                miss_flag = True
+
+                                # # 判断kcf是否偏离
+                                # if (math.fabs(x_kcf - x_yolo) > 100) or (math.fabs(y_kcf - y_yolo)) or \
+                                #     (float(w_kcf) / float(w_yolo) < 0.7) or (float(w_yolo) / float(w_kcf) < 0.7):
+                                #     tracker.init([x_yolo, y_yolo, w_yolo, h_yolo], im)
+
+                                # 不用判断kcf是否偏离，只要yolo可靠，就用yolo更新
+                                tracker.init([x_yolo, y_yolo, w_yolo, h_yolo], im)
                                 # yolo画绿框
-                                cv2.rectangle(frameEach, (x_yolo, x_yolo + w_yolo), (y_yolo, y_yolo + h_yolo),
-                                              (0,255,0),2)
+                                cv2.rectangle(frameEach, (x_yolo, y_yolo), (x_yolo + w_yolo, y_yolo + h_yolo),
+                                              (0, 255, 0), 2)
                                 # 更新KCFGroundList
                                 KCFGroundList.append(yololist[-1])
-                        else: # yolo检测不到东西
+                                cv2.putText(frameEach, 'kcf model: yolo, success', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('kcf model: yolo success')
+                        else:  # yolo检测不到东西
+                            jumptimes = 0
+                            jump_delta = []
+                            jumplist = []
                             misscount += 1
                             if misscount >= 3:
                                 miss_flag = True
-                                yolo_flag = True # miss后进入yolo模式
+                                yolo_flag = True  # miss后进入yolo模式
+                            print('kcf model: yolo fail, nothing')
+                            cv2.putText(frameEach, 'kcf model: yolo nothing, fail', (8, 50),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'edgemiss = ' +
+                                        str(edgemiss_flag), (8, 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                    # 如果jumptimes=0，每10帧执行一次yolo
+                    elif yolocount % 10 == 0:
+                        im, result = det.detect(frameEach)
+                        # print('im.shape = ', im.shape[1], ' ', im.shape[0])
+                        if (len(result) > 0):  # 如果yolo能检测出东西
+                            x_yolo = result[0][0]
+                            y_yolo = result[0][1]
+                            w_yolo = result[0][2] - result[0][0]
+                            h_yolo = result[0][3] - result[0][1]
+                            distance_yolo = 0
+                            yololist.append([x_yolo, y_yolo, w_yolo, h_yolo])
+                            if len(yololist) > 1:  # 不是第一帧yolo
+                                dx_yolo = x_yolo - yololist[-2][0]
+                                dy_yolo = y_yolo - yololist[-2][1]
+                                distance_yolo = dx_yolo * dx_yolo + dy_yolo * dy_yolo
+                                # 选出一个距离上帧yolo框最近的yolo框
+                                for i in range(1, len(result)):
+                                    dx_temp = result[i][0] - yololist[-2][0]
+                                    dy_temp = result[i][1] - yololist[-2][1]
+                                    distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
+                                    if distance_temp < distance_yolo:
+                                        x_yolo = result[i][0]
+                                        y_yolo = result[i][1]
+                                        w_yolo = result[i][2] - result[i][0]
+                                        h_yolo = result[i][3] - result[i][1]
+                                        distance_yolo = distance_temp
+                                        yololist[-1] = [x_yolo, y_yolo, w_yolo, h_yolo]
+
+                            # 如果yolo跳变，认为yolo暂时不可靠，和kcf比较，不考虑miss，
+                            # miss后只会激活yolo跟踪模式，通过jumptimes进一步判断yolo是否可靠
+                            if (math.fabs(x_yolo - x_kcf) > 200) or (math.fabs(y_yolo - y_kcf) > 200):
+                                del yololist[-1]
+                                # yolo不可靠也可以理解为yolo没有检测出目标，因此misscount+1
+                                misscount += 1
+                                if misscount >= 3:
+                                    miss_flag = True
+                                    yolo_flag = True
+                                # 更新KCFGroundList
+                                KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
+
+                                jumptimes += 1
+                                if jumptimes == 4:  # 看连续3帧是否接近，若接近，认为是目标
+                                    jump_same_flag = True
+                                    for i in jump_delta:
+                                        if math.fabs(i) > 50:
+                                            jump_same_flag = False
+                                    if jump_same_flag:  # yolo结果可靠
+                                        yololist.append([x_yolo, y_yolo, w_yolo, h_yolo])
+                                        misscount = 0
+                                        jump_same_flag = False
+                                        jumptimes = 0
+                                        jump_delta = []
+                                        jumplist = []
+                                        KCFGroundList.append(yololist[-1])
+                                        # yolo画框
+                                        cv2.rectangle(frameEach, (x_yolo, y_yolo), (x_yolo + w_yolo,
+                                                                                    y_yolo + h_yolo), (0, 255, 0), 2)
+                                        t1 = time.time()
+                                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                        sub_frame = frameEach[y_kcf: y_kcf + h_kcf, x_kcf: x_kcf + w_kcf]
+                                        cv2.rectangle(frameEach, (x_kcf, y_kcf), (x_kcf + w_kcf, y_kcf + h_kcf),
+                                                      (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'kcf model: yolo jump, success', (8, 50),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'edgemiss = ' +
+                                                    str(edgemiss_flag), (8, 80),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        continue  # 因为flag值改变，不执行后续语句
+                                    # 每隔3帧清空一次
+                                    jumptimes = 0
+                                    jump_delta = []
+                                    jumplist = []
+                                elif (jumptimes == 1):
+                                    jumplist.append(x_yolo)
+                                    jumplist.append(y_yolo)
+                                else:
+                                    jump_delta.append(jumplist[-2] - x_yolo)
+                                    jump_delta.append(jumplist[-1] - y_yolo)
+                                    jumplist.append(x_yolo)
+                                    jumplist.append(y_yolo)
+                                print('kcf model: yolo fail, jump')
+                                cv2.putText(frameEach, 'kcf model: yolo jump, fail', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            else:  # yolo不跳变，可靠
+                                jumptimes = 0
+                                jump_delta = []
+                                jumplist = []
+                                misscount = 0
+                                miss_flag = True
+
+                                # # 判断kcf是否偏离
+                                # if (math.fabs(x_kcf - x_yolo) > 100) or (math.fabs(y_kcf - y_yolo)) or \
+                                #     (float(w_kcf) / float(w_yolo) < 0.7) or (float(w_yolo) / float(w_kcf) < 0.7):
+                                #     tracker.init([x_yolo, y_yolo, w_yolo, h_yolo], im)
+
+                                # 不用判断kcf是否偏离，只要yolo可靠，就用yolo更新
+                                tracker.init([x_yolo, y_yolo, w_yolo, h_yolo], im)
+                                # yolo画绿框
+                                cv2.rectangle(frameEach, (x_yolo, y_yolo), (x_yolo + w_yolo, y_yolo + h_yolo),
+                                              (0, 255, 0), 2)
+                                # 更新KCFGroundList
+                                KCFGroundList.append(yololist[-1])
+                                cv2.putText(frameEach, 'kcf model: yolo, success', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                # cv2.putText(frameEach, str(jumptimes), (8, 110),
+                                #             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('kcf model: yolo success')
+                        else:  # yolo检测不到东西
+                            jumptimes = 0
+                            jump_delta = []
+                            jumplist = []
+                            misscount += 1
+                            if misscount >= 3:
+                                miss_flag = True
+                                yolo_flag = True  # miss后进入yolo模式
+                            print('kcf model: yolo fail, nothing')
+                            cv2.putText(frameEach, 'kcf model: yolo nothing, fail', (8, 50),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'edgemiss = ' +
+                                        str(edgemiss_flag), (8, 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                     else: # 只进行kcf检测
-                        KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
+                        # kcf也不允许跳变
+                        if (math.fabs(x_kcf - KCFGroundList[-1][0]) < 100) or (math.fabs(y_kcf -
+                                    KCFGroundList[-1][1]) < 100):
+                            KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
+                            print('kcf model: only kcf, success')
+                            cv2.putText(frameEach, 'kcf model: only kcf, success', (8, 50),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'edgemiss = ' +
+                                        str(edgemiss_flag), (8, 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            # cv2.putText(frameEach, str(jumptimes), (8, 110),
+                            #             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        else: # kcf跳变，概率很低但是存在，不画框
+                            print('kcf model: only kcf, fail')
+                            sub_frame = frameEach[500: 700, 500: 700]  # 随便给个数，防止程序报错
+                            t1 = time.time()
+                            duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                            cv2.putText(frameEach, 'kcf model: only kcf, jump, fail', (8, 50),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'edgemiss = ' +
+                                        str(edgemiss_flag), (8, 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.')
+                                        , (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            print('kcf model: only kcf, jump, fail')
+                            continue
                     # 无论yolo检测结果如何，都用kcf画框
                     t1 = time.time()
                     duration = 0.0001 * duration + 0.9999 * (t1 - t0)
-                    sub_frame = frameEach[x_kcf: x_kcf + w_kcf, y_kcf: y_kcf + h_kcf]
+                    sub_frame = frameEach[y_kcf: y_kcf + h_kcf, x_kcf: x_kcf + w_kcf]
                     cv2.rectangle(frameEach, (x_kcf, y_kcf), (x_kcf + w_kcf, y_kcf + h_kcf),
                                   (0, 0, 255), 2)
-                    cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.') + ' kcf', (8, 20),
+                    cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'), (8, 20),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+
                 else: # yolo跟踪模式
-                    im, result = det.detect(frameEach)
-                    if (len(result) > 0):  # 如果yolo能检测出东西
-                        x = result[0][0]
-                        y = result[0][1]
-                        w = result[0][2]
-                        h = result[0][3]
-                        distance = 0
-                        yololist.append([x, y, w, h])
-                        dx = x - yololist[-2][0]
-                        dy = y - yololist[-2][1]
-                        distance = dx * dx + dy * dy
-                        # 选出一个距离上帧yolo框最近的yolo框
-                        for i in range(1, len(result)):
-                            x_temp = result[i][0]
-                            y_temp = result[i][1]
-                            distance_temp = x_temp * x_temp + y_temp * y_temp
-                            if distance_temp < distance:
-                                x = x_temp
-                                y = y_temp
-                                w = result[i][2]
-                                h = result[i][3]
-                                distance = distance_temp
-                                yololist[-1] = [x, y, w, h]
-                        # 若miss_flag=1，则yolo可靠
-                        if miss_flag:
-                            miss_flag = False
-                            misscount = 0
-                            KCFGroundList.append(yololist[-1])
-                            # w>20，下帧kcf跟踪
-                            if w >= 20:
-                                yolo_flag = False
-                            # yolo画框
-                            cv2.rectangle(frameEach, (x, x + w), (y, y + h), (0, 255, 0), 2)
-                            t1 = time.time()
-                            duration = 0.0001 * duration + 0.9999 * (t1 - t0)
-                            sub_frame = frameEach[x: x + w, y: y + h]
-                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.') + ' yolo: success',
-                                        (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                        # 若miss_flag=0，且yolo跳变，则yolo不可靠
-                        if (miss_flag == 0) and (distance > 500):
-                            del yololist[-1]
+                    # 如果边缘miss且没出现jumptimes，每5帧执行一次yolo检测，提高fps
+                    if (edgemiss_flag == True) and (yolocount % 5 != 0) and (jumptimes == 0):
+                        sub_frame = frameEach[500: 700, 500: 700]
+                        t1 = time.time()
+                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                        cv2.putText(frameEach, 'yolo model: edgemiss, dont detect', (8, 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        cv2.putText(frameEach, 'edgemiss = ' +
+                                    str(edgemiss_flag), (8, 80),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        print('yolo model: edgemiss, dont detect')
+                    # 如果miss但不是边缘miss，且没出现jumptimes，则每2帧检测一次
+                    elif (edgemiss_flag == False) and (miss_flag == True) \
+                            and (yolocount % 2 != 0) and (jumptimes == 0):
+                        sub_frame = frameEach[500: 700, 500: 700]
+                        t1 = time.time()
+                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                        cv2.putText(frameEach, 'yolo model: miss, dont detect', (8, 50),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        cv2.putText(frameEach, 'edgemiss = ' +
+                                    str(edgemiss_flag), (8, 80),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                        print('yolo model: miss, dont detect')
+                    # 如果没miss，每帧都执行yolo检测
+                    else:
+                        im, result = det.detect(frameEach)
+                        if (len(result) > 0):  # 如果yolo能检测出东西
+                            x = result[0][0]
+                            y = result[0][1]
+                            w = result[0][2] - result[0][0]
+                            h = result[0][3] - result[0][1]
+                            distance = 0
+                            yololist.append([x, y, w, h])
+                            dx = x - yololist[-2][0]
+                            dy = y - yololist[-2][1]
+                            distance = dx * dx + dy * dy
+                            # # 选出一个距离上帧yolo框最近的yolo框
+                            # for i in range(1, len(result)):
+                            #     dx_temp = result[i][0] - yololist[-2][0]
+                            #     dy_temp = result[i][1] - yololist[-2][1]
+                            #     distance_temp = dx_temp * dx_temp + dy_temp * dy_temp
+                            #     if distance_temp < distance:
+                            #         x = result[i][0]
+                            #         y = result[i][1]
+                            #         w = result[i][2] - result[0][0]
+                            #         h = result[i][3] - result[0][1]
+                            #         distance = distance_temp
+                            #         yololist[-1] = [x, y, w, h]
+
+                            # 若edgemiss_flag=0，且yolo跳变，则yolo暂时不可靠，具体还需jump_same_flag进一步判断
+                            print('dx = ', dx, ' dy = ', dy)
+                            if (edgemiss_flag == False) and ((math.fabs(dx) > 50) or (math.fabs(dy) > 50)):
+                                del yololist[-1]
+                                misscount += 1
+                                if misscount >= 3:
+                                    miss_flag = True
+                                sub_frame = frameEach[500: 700, 500: 700] # 随便给个数，防止程序报错
+                                t1 = time.time()
+                                duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                cv2.putText(frameEach, 'yolo model: jump, fail', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                            (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('yolo model: jump, fail')
+                                jumptimes += 1
+                                if jumptimes == 3: # 看连续2帧是否接近，若接近，认为是目标
+                                    jump_same_flag = True
+                                    for i in jump_delta:
+                                        if math.fabs(i) > 50:
+                                            jump_same_flag = False
+                                    if jump_same_flag: # yolo结果可靠
+                                        yololist.append([x, y, w, h])
+                                        edgemiss_flag = False
+                                        miss_flag = False
+                                        misscount = 0
+                                        jump_same_flag = False
+                                        jumptimes = 0
+                                        jump_delta = []
+                                        jumplist = []
+                                        KCFGroundList.append(yololist[-1])
+                                        # yolo画框
+                                        cv2.rectangle(frameEach, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                                        t1 = time.time()
+                                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                        # sub_frame = frameEach[y: y + h, x: x + w]
+                                        sub_frame = frameEach[500: 700, 500: 700]
+                                        cv2.putText(frameEach, 'yolo model: jump, success', (8, 50),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach, 'edgemiss = ' +
+                                                    str(edgemiss_flag), (8, 80),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        cv2.putText(frameEach,
+                                                    'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                        print('yolo model: jump, success')
+                                        continue # 因为flag值改变，不执行后续语句
+                                    # 每隔3帧清空一次
+                                    jumptimes = 0
+                                    jump_delta = []
+                                    jumplist = []
+                                elif (jumptimes == 1):
+                                    jumplist.append(x)
+                                    jumplist.append(y)
+                                else:
+                                    jump_delta.append(jumplist[-2] - x)
+                                    jump_delta.append(jumplist[-1] - y)
+                                    jumplist.append(x)
+                                    jumplist.append(y)
+                            # edgemiss_flag=0，yolo不跳变，yolo可靠
+                            elif (edgemiss_flag == False) and ((math.fabs(dx) <= 50) and (math.fabs(dy) <= 50)):
+                                miss_flag = False
+                                misscount = 0
+                                # w>20，下帧kcf跟踪
+                                if w >= 20:
+                                    yolo_flag = False
+                                    tracker.init(yololist[-1], im)
+                                KCFGroundList.append(yololist[-1])
+                                # yolo画框
+                                cv2.rectangle(frameEach, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                                t1 = time.time()
+                                duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                # sub_frame = frameEach[y: y + h, x: x + w]
+                                sub_frame = frameEach[500: 700, 500: 700]
+                                cv2.putText(frameEach, 'yolo model: success', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                            (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('yolo model: success')
+                            # 若edgemiss_flag=1，但yolo检测结果不在边界，则yolo不可靠
+                            elif (edgemiss_flag == True) and ((x > 50) and (x + w < im.shape[1] - 50) and (y > 50)
+                                                              and (y + h < im.shape[0] - 50)):
+                                del yololist[-1]
+                                misscount += 1
+                                sub_frame = frameEach[500: 700, 500: 700]  # 随便给个数，防止程序报错
+                                t1 = time.time()
+                                duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                cv2.putText(frameEach, 'yolo model: edgemiss, jump, fail', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                            (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('yolo model: edgemiss, jump, fail')
+                            # 若edgemiss_flag=1，且yolo检测结果在边界，则yolo可靠，该判别条件必须在带有edgemiss_flag==0
+                            # 判别条件之后
+                            else:
+                                KCFGroundList.append(yololist[-1])
+                                # w>20，下帧kcf跟踪
+                                if w >= 20:
+                                    yolo_flag = False
+                                    tracker.init(yololist[-1], im)
+                                # yolo画框
+                                cv2.rectangle(frameEach, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                                t1 = time.time()
+                                duration = 0.0001 * duration + 0.9999 * (t1 - t0)
+                                # sub_frame = frameEach[y: y + h, x: x + w]
+                                sub_frame = frameEach[500: 700, 500: 700]
+                                cv2.putText(frameEach, 'yolo model: edgemiss, success', (8, 50),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'edgemiss = ' +
+                                            str(edgemiss_flag), (8, 80),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
+                                            (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                print('yolo model: edgemiss, success')
+                                miss_flag = False
+                                edgemiss_flag = False
+                                misscount = 0
+                        else: # yolo检测不到东西
+                            # 判定是否边缘miss，必须先是miss，才能再是边缘miss
+                            if (miss_flag == True) and ((yololist[-1][0] < 30) or (yololist[-1][0] + yololist[-1][2] >
+                                    im.shape[1] - 30) or (yololist[-1][1] < 30) or (yololist[-1][1] + yololist[-1][3] >
+                                                                                      im.shape[0] - 30)):
+                                edgemiss_flag = True
                             misscount += 1
                             if misscount >= 3:
                                 miss_flag = True
-                            sub_frame = frameEach[yololist[-1][0]: yololist[-1][0] + yololist[-1][2],
-                                        yololist[-1][1]: yololist[-1][1] + yololist[-1][3]]
+                            sub_frame = frameEach[500: 700, 500: 700]
                             t1 = time.time()
                             duration = 0.0001 * duration + 0.9999 * (t1 - t0)
-                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.') + ' yolo: fail',
+                            cv2.putText(frameEach, 'yolo model: nothing, fail', (8, 50),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'edgemiss = ' +
+                                        str(edgemiss_flag), (8, 80),
+                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.'),
                                         (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                        # miss_flag=0，yolo不跳变，yolo可靠
-                        else:
-                            # w>20，下帧kcf跟踪
-                            if w >= 20:
-                                yolo_flag = False
-                            KCFGroundList.append(yololist[-1])
-                            # yolo画框
-                            cv2.rectangle(frameEach, (x, x + w), (y, y + h), (0, 255, 0), 2)
-                            t1 = time.time()
-                            duration = 0.0001 * duration + 0.9999 * (t1 - t0)
-                            sub_frame = frameEach[x: x + w, y: y + h]
-                            cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.') + ' yolo: success',
-                                        (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                    else: # yolo检测不到东西
-                        misscount += 1
-                        if misscount >= 3:
-                            miss_flag = True
-                        sub_frame = frameEach[yololist[-1][0]: yololist[-1][0] + yololist[-1][2],
-                                    yololist[-1][1]: yololist[-1][1] + yololist[-1][3]]
-                        t1 = time.time()
-                        duration = 0.0001 * duration + 0.9999 * (t1 - t0)
-                        cv2.putText(frameEach, 'FPS: ' + str(1 / duration)[:4].strip('.') + ' yolo: fail', (8, 20),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            print('yolo model: nothing, fail')
 
 
 
@@ -1046,7 +1410,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene7.mp4"
+            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene8.mp4"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')
