@@ -7,9 +7,9 @@ import time
 
 def yolo_detect(pathIn='',
                 pathOut=None,
-                label_path='./cfg/coco.names',
-                config_path='./cfg/yolov3_coco.cfg',
-                weights_path='./cfg/yolov3_coco.weights',
+                label_path='../LargeFiles_notcodes/KCFTest/cfg/coco.names',
+                config_path='../LargeFiles_notcodes/KCFTest/cfg/yolov3_coco.cfg',
+                weights_path='../LargeFiles_notcodes/KCFTest/cfg/yolov3_coco.weights',
                 confidence_thre=0.5,
                 nms_thre=0.3,
                 jpg_quality=80):

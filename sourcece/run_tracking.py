@@ -7,7 +7,7 @@ from sourcece.siamrpn import TrackerSiamRPN
 
 if __name__ == '__main__':
     # setup tracker
-    net_path = 'pretrained/siamrpn/model.pth'
+    net_path = '../LargeFiles_notcodes/KCFTests/pretrained/siamrpn/model.pth'
     tracker = TrackerSiamRPN(net_path=net_path)
 
     # setup experiments

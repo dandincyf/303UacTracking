@@ -37,7 +37,7 @@ def click_and_crop(event, x, y, flags, param):
 def main():
 
     cap = cv2.VideoCapture("B:\Document\Code\\586\KCFTest\\testVideo\\1.avi")
-    net_path = 'pretrained/siamrpn/model.pth'
+    net_path = '../LargeFiles_notcodes/KCFTests/pretrained/siamrpn/model.pth'
     tracker = TrackerSiamRPN(net_path=net_path)
     train_flag = True
     cv2.namedWindow('frame')

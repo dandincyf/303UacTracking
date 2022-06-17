@@ -16,7 +16,7 @@ class Detector(baseDet):
 
     def init_model(self):
 
-        self.weights = 'weights/best-4-28.pt'  # 如果要更换参数，更换这行
+        self.weights = '../LargeFiles_notcodes/KCFTest/weights/best-4-28.pt'  # 如果要更换参数，更换这行
         self.device = '0' if torch.cuda.is_available() else 'cpu'
         self.device = select_device(self.device)
         model = attempt_load(self.weights, map_location=self.device)

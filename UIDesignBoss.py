@@ -393,7 +393,7 @@ def ExeTracking():
                                         KCFGroundList.append(yololist[-1])
                                         # yolo画框
                                         cv2.rectangle(frameEach, (x_yolo, y_yolo), (x_yolo + w_yolo,
-                                                                                    y_yolo + h_yolo), (0, 255, 0), 2)
+                                                                                   y_yolo + h_yolo), (0, 255, 0), 2)
                                         t1 = time.time()
                                         duration = 0.0001 * duration + 0.9999 * (t1 - t0)
                                         sub_frame = frameEach[y_kcf: y_kcf + h_kcf, x_kcf: x_kcf + w_kcf]
@@ -836,8 +836,8 @@ def ExeTracking():
 
 
 
-            TrackingFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/frame_00000" + str(framenum) + ".jpg")
-            FirstFrame_Pathout = ("C:/dataset/KCF_Test_results/Outputframes_temp/sub_frame_00000" + str(framenum) + ".jpg")
+            TrackingFrame_Pathout = ("../LargeFiles_notcodes/KCFTest/Outputframes/frame_00000" + str(framenum) + ".jpg")
+            FirstFrame_Pathout = ("../LargeFiles_notcodes/KCFTest/Outputframes/sub_frame_00000" + str(framenum) + ".jpg")
 
             framenum += 1
             cv2.imwrite(TrackingFrame_Pathout, frameEach)
@@ -1421,7 +1421,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene11.mp4"
+            Test_Video_Name = "../LargeFiles_notcodes/KCFTest/video/scene11.avi"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')
