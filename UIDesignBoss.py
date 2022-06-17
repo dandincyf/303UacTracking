@@ -22,6 +22,8 @@ det = Detector()
 test = []
 TrackingBoundingBoxPath = ""
 fps = 20
+first_detect_times = 1
+
 
 # yolodetect_list = [] #装yolo检测值
 # yolopredic_list = [[0,0,0,0]] #装yolo的卡尔曼最佳估计值,初始化
@@ -46,12 +48,18 @@ def ExeDetection():
     Text_TrackingLog.insert(tkinter.END, "*********开始执行检测识别**********\n")
     Text_TrackingLog.update()
     global Img
-    cap = cv2.VideoCapture(Test_Video_Name)
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
-    the_first_frame_flag, the_first_frame = cap.read()
-    cv2.imwrite("get_the_first_frame.jpg", the_first_frame)
-    pathIn = './get_the_first_frame.jpg'
-    im, result = det.detect(the_first_frame)
+    global first_detect_times
+    # yolo检100次直到检出目标
+    for i in range(1, 100):
+        cap = cv2.VideoCapture(Test_Video_Name)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+        the_first_frame_flag, the_first_frame = cap.read()
+        cv2.imwrite("get_the_first_frame.jpg", the_first_frame)
+        pathIn = './get_the_first_frame.jpg'
+        im, result = det.detect(the_first_frame)
+        if len(result) > 0:
+            first_detect_times = i
+            break
     x1=result[0][0]
     y1=result[0][1]
     x2=result[0][2]
@@ -88,6 +96,7 @@ def ExeTracking():
     print(Test_RecGroundTruth_Name)
     global TrackingBoundingBoxPath
     global test
+    global first_detect_times
     yolo_flag = False
     yololist = []
     misscount = 0
@@ -268,8 +277,6 @@ def ExeTracking():
         Text_TrackingLog.config(state='disabled')
         cap.release()
     elif (Algorithm_name == "KCF with adaptive frames" and Test_RecGroundTruth_Name == ""):
-        # 假如yolo没有检测到目标，就会直接报错
-        # 假如yolo每一帧都检测，速度会减慢100倍
         selectingObject = False
         initTracking = False
         onTracking = False
@@ -281,7 +288,8 @@ def ExeTracking():
         KCFGroundList = [[0, 0, 0, 0]]
 
         cap = cv2.VideoCapture(Test_Video_Name)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 1)
+        # 从first_detect_times开始读取，用yolo来检测
+        cap.set(cv2.CAP_PROP_POS_FRAMES, first_detect_times)
         Box = [(test[2], test[3])]
         Box.append(((test[2] + test[4]), test[3] + test[5]))
         tracker = kcftracker.KCFTracker(True, True, True)
@@ -357,7 +365,7 @@ def ExeTracking():
                                         distance_yolo = distance_temp
                                         yololist[-1] = [x_yolo, y_yolo, w_yolo, h_yolo]
 
-                            # 如果yolo跳变，认为yolo暂时不可靠，和上帧yolo比较，不考虑miss，miss后只会激活yolo跟踪模式
+                            # 如果yolo跳变，认为yolo暂时不可靠，和kcf比较，不考虑miss，miss后只会激活yolo跟踪模式
                             # 通过jumptimes进一步判断yolo是否可靠
                             if (math.fabs(x_yolo - x_kcf) > 200) or (math.fabs(y_yolo - y_kcf) > 200):
                                 del yololist[-1]
@@ -370,7 +378,7 @@ def ExeTracking():
                                 KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
 
                                 jumptimes += 1
-                                if jumptimes == 4:  # 看连续3帧是否接近，若接近，认为是目标
+                                if jumptimes >= 4:  # 看连续3帧是否接近，若接近，认为是目标
                                     jump_same_flag = True
                                     for i in jump_delta:
                                         if math.fabs(i) > 50:
@@ -406,7 +414,7 @@ def ExeTracking():
                                 elif (jumptimes == 1):
                                     jumplist.append(x_yolo)
                                     jumplist.append(y_yolo)
-                                else:
+                                elif (jumptimes > 1):
                                     jump_delta.append(jumplist[-2] - x_yolo)
                                     jump_delta.append(jumplist[-1] - y_yolo)
                                     jumplist.append(x_yolo)
@@ -497,7 +505,7 @@ def ExeTracking():
                                 KCFGroundList.append([x_kcf, y_kcf, w_kcf, h_kcf])
 
                                 jumptimes += 1
-                                if jumptimes == 4:  # 看连续3帧是否接近，若接近，认为是目标
+                                if jumptimes >= 4:  # 看连续3帧是否接近，若接近，认为是目标
                                     jump_same_flag = True
                                     for i in jump_delta:
                                         if math.fabs(i) > 50:
@@ -533,7 +541,7 @@ def ExeTracking():
                                 elif (jumptimes == 1):
                                     jumplist.append(x_yolo)
                                     jumplist.append(y_yolo)
-                                else:
+                                elif (jumptimes > 1):
                                     jump_delta.append(jumplist[-2] - x_yolo)
                                     jump_delta.append(jumplist[-1] - y_yolo)
                                     jumplist.append(x_yolo)
@@ -622,7 +630,8 @@ def ExeTracking():
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
 
-                else: # yolo跟踪模式
+                # yolo跟踪模式
+                else:
                     # 如果边缘miss且没出现jumptimes，每5帧执行一次yolo检测，提高fps
                     if (edgemiss_flag == True) and (yolocount % 5 != 0) and (jumptimes == 0):
                         sub_frame = frameEach[500: 700, 500: 700]
@@ -695,9 +704,11 @@ def ExeTracking():
                                             (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
                                 print('yolo model: jump, fail')
                                 jumptimes += 1
-                                if jumptimes == 3: # 看连续2帧是否接近，若接近，认为是目标
+                                print('jumptimes = ', jumptimes)
+                                if jumptimes >= 3: # 看连续2帧是否接近，若接近，认为是目标
                                     jump_same_flag = True
                                     for i in jump_delta:
+                                        print('i in jump_delta = ', i)
                                         if math.fabs(i) > 50:
                                             jump_same_flag = False
                                     if jump_same_flag: # yolo结果可靠
@@ -733,7 +744,7 @@ def ExeTracking():
                                 elif (jumptimes == 1):
                                     jumplist.append(x)
                                     jumplist.append(y)
-                                else:
+                                elif (jumptimes > 1): # 前面=3时jumptimes置0，防止再次进入
                                     jump_delta.append(jumplist[-2] - x)
                                     jump_delta.append(jumplist[-1] - y)
                                     jumplist.append(x)
@@ -1410,7 +1421,7 @@ def TestVideoChoose():
         print(flag)
         if flag:
             global Test_Video_Name
-            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene8.mp4"
+            Test_Video_Name = r"C:\dataset\HIT_code_video\video_figure\video\scene11.mp4"
             Text_TrackingLog.config(state='normal')
             Text_TrackingLog.insert(tkinter.END, "视频" + Test_Video_Name + "已经载入\n")
             Text_TrackingLog.config(state='disabled')
